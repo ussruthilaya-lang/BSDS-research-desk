@@ -1,0 +1,14 @@
+﻿__pycache__/
+*.pyc
+.venv/
+.env
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+.idea/
+.vscode/
+# keep raw experiment output out of git except curated summaries
+results/raw/
+.DS_Store

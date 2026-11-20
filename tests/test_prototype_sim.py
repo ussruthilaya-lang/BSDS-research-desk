@@ -1,9 +1,4 @@
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "prototype"))
-
-from sim import Backend, Sim, make_corpus, query_key, search  # noqa: E402
+from sim import Backend, Sim, make_corpus, query_key, search
 
 
 def test_query_key_ignores_case_order_punctuation_and_duplicates():

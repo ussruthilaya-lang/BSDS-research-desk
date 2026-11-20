@@ -1,4 +1,4 @@
-﻿# Project management log
+# Project management log
 
 Kept in-repo so the project-management writeup (due 12/14) can be assembled from real history.
 

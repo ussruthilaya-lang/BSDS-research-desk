@@ -1,4 +1,4 @@
-﻿[project]
+[project]
 name = "researchdesk"
 version = "0.1.0"
 description = "Backend for an AI research assistant: shared caching and in-flight merging under a fixed paper-search API budget."

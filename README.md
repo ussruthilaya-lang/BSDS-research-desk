@@ -1,4 +1,4 @@
-﻿# Research Desk
+# Research Desk
 
 Backend for an AI research assistant. It answers more student questions on time under a fixed paper-search API budget by **sharing search results** (cache) and **merging identical in-flight searches**.
 

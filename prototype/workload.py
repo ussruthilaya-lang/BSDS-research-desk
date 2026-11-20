@@ -9,6 +9,8 @@ on a few hot queries (highly repeated searches).
 import random
 from dataclasses import dataclass
 
+from sim import query_key
+
 
 @dataclass(frozen=True)
 class Question:
@@ -16,6 +18,22 @@ class Question:
     arrival: float  # seconds of simulated time
     deadline: float  # absolute simulated time by which the brief must be done
     queries: tuple[str, ...]  # the scripted searches, run in order
+
+
+def repeat_fraction(questions: list[Question]) -> float:
+    """Share of all searches whose key already appeared earlier in arrival order.
+
+    This is the ceiling on what reuse can save: ~0 means mostly unique searches,
+    values near 1 mean highly repeated searches. Use it to label workloads.
+    """
+    seen, repeats, total = set(), 0, 0
+    for q in sorted(questions, key=lambda q: q.arrival):
+        for query in q.queries:
+            key = query_key(query)
+            repeats += key in seen
+            seen.add(key)
+            total += 1
+    return repeats / total if total else 0.0
 
 
 def make_query_pool(n: int) -> list[str]:

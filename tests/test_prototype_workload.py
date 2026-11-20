@@ -1,6 +1,6 @@
 import pytest
 
-from workload import make_workload, zipf_weights
+from workload import make_workload, repeat_fraction, zipf_weights
 
 
 def build(**overrides):
@@ -37,6 +37,17 @@ def test_zipf_weights_uniform_at_zero_and_decreasing_otherwise():
     assert zipf_weights(4, 0.0) == [1.0, 1.0, 1.0, 1.0]
     weights = zipf_weights(4, 1.0)
     assert weights == sorted(weights, reverse=True)
+
+
+def test_repeat_fraction_separates_unique_from_repeated_workloads():
+    mostly_unique = build(n_questions=100, k=5, pool_size=5000, skew=0.0)
+    highly_repeated = build(n_questions=100, k=5, pool_size=30, skew=1.2)
+    assert repeat_fraction(mostly_unique) < 0.2
+    assert repeat_fraction(highly_repeated) > 0.7
+
+
+def test_repeat_fraction_is_zero_for_empty_workload():
+    assert repeat_fraction([]) == 0.0
 
 
 @pytest.mark.parametrize(

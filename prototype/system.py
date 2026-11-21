@@ -38,7 +38,8 @@ class System:
         self.corpus = corpus
         self.think_time = think_time
         self.free_slots = n_workers * slots_per_worker
-        self.pending: deque[Question] = deque()
+        self.pending: deque[Question] = deque()  # questions waiting for a free worker slot
+        self.max_pending = 0
         self.outcomes: list[Outcome] = []
 
     def load(self, questions: list[Question]) -> None:
@@ -47,6 +48,7 @@ class System:
 
     def _arrive(self, q: Question) -> None:
         self.pending.append(q)
+        self.max_pending = max(self.max_pending, len(self.pending))
         self._assign()
 
     def _assign(self) -> None:
@@ -110,6 +112,7 @@ def summarize(system: System, gateway: Gateway, backend: Backend, horizon: float
         "calls_per_brief": backend.calls / len(good) if good else math.nan,
         "p95_latency_s": p95([o.latency for o in good]),
         "max_queue_depth": gateway.max_depth,
+        "max_pending": system.max_pending,
         "violations": backend.overlap_violations + backend.pacing_violations,
     }
 
@@ -138,4 +141,8 @@ def run_baseline(
         make_workload(n_questions, rate_per_min, k, pool_size, skew, deadline_s=deadline_s, seed=seed)
     )
     sim.run(until=duration_s)
-    return summarize(system, gateway, backend, duration_s)
+    result = summarize(system, gateway, backend, duration_s)
+    # Calls that did not end up in an on-time correct brief. Slightly overcounts at the
+    # window edge (calls for questions still running when the clock stops).
+    result["wasted_calls"] = backend.calls - k * result["on_time_correct"]
+    return result

@@ -79,6 +79,14 @@ def test_throughput_never_exceeds_provider_ceiling():
     assert result["violations"] == 0
 
 
+def test_overload_builds_a_worker_backlog_and_wastes_calls():
+    light = run_baseline(workers=4, rate_per_min=2, duration_s=1800, seed=3)
+    heavy = run_baseline(workers=4, rate_per_min=12, duration_s=1800, seed=3)
+    assert heavy["max_pending"] > 10 * max(light["max_pending"], 1)
+    assert heavy["wasted_calls"] > light["wasted_calls"]
+    assert heavy["wasted_calls"] >= 0
+
+
 def test_more_workers_help_below_the_ceiling():
     low = run_baseline(workers=1, rate_per_min=3, duration_s=1800, seed=2)
     high = run_baseline(workers=2, rate_per_min=3, duration_s=1800, seed=2)

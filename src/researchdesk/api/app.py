@@ -50,7 +50,8 @@ def _resolve(deps: Deps) -> Deps:
         from researchdesk.workflow import runner  # noqa: F401  (Sruthilaya, S7)
 
         def run_search(settings, req, trace_id):
-            return runner.search_once(settings, req.query, req.deadline_ms, req.client, req.run_id, trace_id)
+            return runner.search_once(settings, req.query, req.deadline_ms, req.client, req.run_id, trace_id,
+                                      user=req.user)
     except (ImportError, AttributeError):
         run_search = stubs.search
     return Deps(deps.admit or _default_admit, deps.plan or lead_plan, deps.gather or lead_gather,

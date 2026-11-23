@@ -71,3 +71,26 @@ def test_get_job_during_planning_is_404_not_500(monkeypatch):
     client, r = make(monkeypatch, lambda s, req: c.AdmitResult(True, 1))
     r.hset(c.job_key("j9"), "status", "admitted")  # what a concurrent GET sees between the claim and the full write
     assert client.get("/jobs/j9").status_code == 404
+
+
+def test_search_passes_the_caller_to_the_runner(monkeypatch):
+    # The gateway's per-user quotas only work if the user reaches it, so search_once must receive it.
+    import sys
+    import types
+
+    seen = {}
+    fake = types.ModuleType("researchdesk.workflow.runner")
+
+    def search_once(settings, query, deadline_ms, client, run_id, trace_id, job_id=None, subagent_id=None, user="anon"):
+        seen.update(query=query, user=user)
+        return c.SearchResult("ok", "k", [1], 5.0, "provider", 0)
+
+    fake.search_once = search_once
+    monkeypatch.setitem(sys.modules, "researchdesk.workflow.runner", fake)
+    monkeypatch.setattr(sys.modules["researchdesk.workflow"], "runner", fake, raising=False)
+    r = fakeredis.FakeRedis(decode_responses=True)
+    monkeypatch.setattr(events, "_redis", lambda settings: r)
+    client = TestClient(create_app(c.Settings(run_id="r1"), Deps(admit=lambda s, q: c.AdmitResult(True, 1))))
+    res = client.post("/search", json={"query": "q", "deadline_ms": 5000, "client": "claude", "run_id": "r1", "user": "alice"})
+    assert res.status_code == 200
+    assert seen == {"query": "q", "user": "alice"}

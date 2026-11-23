@@ -271,3 +271,9 @@ def test_harness_columns_in_order():
     para = sec[sec.index("Harness CSV columns"):]
     listed = re.findall(r"`(\w+)`", para.split("Times in the CSV")[0])
     assert tuple(listed) == c.HARNESS_CSV_COLUMNS
+
+
+def test_search_once_takes_the_user():
+    """POST /search carries a user; the gateway's per-user quotas need it, so search_once must accept it."""
+    row = next(line for line in DOC.splitlines() if "runner.search_once(settings" in line)
+    assert 'user="anon"' in row

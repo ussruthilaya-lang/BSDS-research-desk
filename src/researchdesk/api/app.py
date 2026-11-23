@@ -89,10 +89,11 @@ def create_app(settings: c.Settings, deps: Deps | None = None) -> FastAPI:
     def now_ms() -> int:
         return c.redis_time_to_ms(rds().time())
 
-    def emit(name: str, run_id: str, client: str, user: str, job_id: str = "", **fields) -> None:
+    def emit(name: str, run_id: str, client: str, user: str, job_id: str = "", *,
+             subagent_id: int | None = None, **fields) -> None:
         events.emit(settings, c.EventRecord(
             ts_ms=now_ms(), run_id=run_id, client=client, service="api", event=name,
-            trace_id=job_id, job_id=job_id, user=user, fields=fields))
+            trace_id=job_id, job_id=job_id, subagent_id=subagent_id, user=user, fields=fields))
 
     @app.exception_handler(RequestValidationError)
     def _validation(_: Request, exc: RequestValidationError):
@@ -118,13 +119,26 @@ def create_app(settings: c.Settings, deps: Deps | None = None) -> FastAPI:
         if not r.hsetnx(c.job_key(job_id), "status", c.JobStatus.ADMITTED.value):
             raise HTTPException(409, f"job_id {job_id!r} already exists")
         ctx = (req.run_id, req.client, req.user, job_id)
+        claimed: list[str] = [c.job_key(job_id)]  # everything written for this job, to undo on failure
+        entries: list[str] = []
+        try:
+            return _admit_and_enqueue(req, ctx, job_id, created, gather, deadline_at, claimed, entries)
+        except Exception:
+            # The id was claimed above. Without this, a failed planning or admission call would leave a
+            # job hash holding only `status`: GET /jobs/{id} would return 500 and the id could never be reused.
+            r.delete(*claimed)
+            if entries:
+                r.xdel(c.TASK_STREAM, *entries)
+            raise
+
+    def _admit_and_enqueue(req, ctx, job_id, created, gather, deadline_at, claimed, entries):
+        r = rds()
         emit(c.EventName.JOB_SUBMITTED.value, *ctx, deadline_ms=req.deadline_ms)
 
         plan = req.plan if req.plan is not None else d.plan(settings, req.question)
         _sleep_sim(settings, settings.plan_ms)  # planning time counts against the deadline
         n, k = len(plan), max(len(p.queries) for p in plan)
         emit(c.EventName.JOB_PLANNED.value, *ctx, n_subagents=n, k=k)
-        events.count(settings, "rd_jobs_total", {"status": c.JobStatus.ADMITTED.value})
 
         job = {"n_subagents": n, "done": 0, "failed": 0, "completeness": 0, "created_at_ms": created,
                "deadline_at_ms": deadline_at, "gather": gather, "client": req.client,
@@ -142,6 +156,7 @@ def create_app(settings: c.Settings, deps: Deps | None = None) -> FastAPI:
             emit(c.EventName.JOB_ADMITTED.value, *ctx, estimated_ms=verdict.estimated_ms)
         else:
             emit(c.EventName.JOB_ADMITTED.value, *ctx, estimated_ms=0)
+        events.count(settings, "rd_jobs_total", {"status": c.JobStatus.ADMITTED.value})
 
         r.hset(c.job_key(job_id), mapping=job)
         try:
@@ -150,14 +165,15 @@ def create_app(settings: c.Settings, deps: Deps | None = None) -> FastAPI:
             if "BUSYGROUP" not in str(err):
                 raise
         for p in plan:
+            claimed.append(c.subagent_key(job_id, p.subagent_id))
             r.hset(c.subagent_key(job_id, p.subagent_id), mapping={
                 "status": c.TaskStatus.QUEUED.value, "steps_done": 0, "k": len(p.queries),
                 "stale_steps": 0, "worker_id": ""})
-            r.xadd(c.TASK_STREAM, {
+            entries.append(r.xadd(c.TASK_STREAM, {
                 "job_id": job_id, "subagent_id": p.subagent_id, "queries": json.dumps(p.queries),
                 "deadline_at_ms": deadline_at, "trace_id": job_id, "client": req.client,
-                "user": req.user, "run_id": req.run_id, "attempt": 0})
-            emit(c.EventName.TASK_ENQUEUED.value, *ctx, queries=p.queries, subagent_id=p.subagent_id)
+                "user": req.user, "run_id": req.run_id, "attempt": 0}))
+            emit(c.EventName.TASK_ENQUEUED.value, *ctx, subagent_id=p.subagent_id, queries=p.queries)
 
         def run_gather():
             try:
@@ -172,7 +188,7 @@ def create_app(settings: c.Settings, deps: Deps | None = None) -> FastAPI:
     def get_job(job_id: str):
         r = rds()
         job = r.hgetall(c.job_key(job_id))
-        if not job:
+        if not job or "n_subagents" not in job:  # a job still being planned has only its `status`
             raise HTTPException(404, "unknown job")
         subs = []
         for i in range(int(job["n_subagents"])):

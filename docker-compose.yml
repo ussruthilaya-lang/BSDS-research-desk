@@ -1,0 +1,86 @@
+# Every service from contract section 1. provider, gateway and mcp are Satyaa's: their module
+# paths below are placeholders until her skeletons land (due Wed 11/25); fix the paths then.
+services:
+  redis:
+    image: redis:7
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  api:
+    build: .
+    command: uvicorn researchdesk.api.app:app --host 0.0.0.0 --port 8000
+    env_file: config/compose.env
+    ports: ["8000:8000"]
+    depends_on:
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  provider:
+    build: .
+    command: uvicorn researchdesk.simulator.app:app --host 0.0.0.0 --port 8001
+    env_file: config/compose.env
+    ports: ["8001:8001"]
+    depends_on:
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8001/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  gateway:
+    build: .
+    command: uvicorn researchdesk.gateway.app:app --host 0.0.0.0 --port 8002
+    env_file: config/compose.env
+    ports: ["8002:8002"]
+    depends_on:
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8002/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  mcp:
+    build: .
+    command: uvicorn researchdesk.mcp.app:app --host 0.0.0.0 --port 8003
+    env_file: config/compose.env
+    ports: ["8003:8003"]
+    depends_on:
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8003/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  board:
+    build: .
+    command: uvicorn researchdesk.board.app:app --host 0.0.0.0 --port 8004
+    env_file: config/compose.env
+    ports: ["8004:8004"]
+    depends_on:
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8004/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  worker:
+    build: .
+    command: python -m researchdesk.workflow.worker
+    env_file: config/compose.env
+    depends_on:
+      redis: {condition: service_healthy}
+    # scale with: docker compose up --scale worker=N
+  prometheus:
+    image: prom/prometheus
+    volumes: ["./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    ports: ["9090:9090"]
+  grafana:
+    image: grafana/grafana
+    ports: ["3000:3000"]
+    depends_on: [prometheus]

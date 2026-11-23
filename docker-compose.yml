@@ -12,7 +12,7 @@ services:
   api:
     build: .
     command: uvicorn researchdesk.api.app:app --host 0.0.0.0 --port 8000
-    env_file: config/.env
+    env_file: config/compose.env
     ports: ["8000:8000"]
     depends_on:
       redis: {condition: service_healthy}
@@ -24,7 +24,7 @@ services:
   provider:
     build: .
     command: uvicorn researchdesk.simulator.app:app --host 0.0.0.0 --port 8001
-    env_file: config/.env
+    env_file: config/compose.env
     ports: ["8001:8001"]
     depends_on:
       redis: {condition: service_healthy}
@@ -36,7 +36,7 @@ services:
   gateway:
     build: .
     command: uvicorn researchdesk.gateway.app:app --host 0.0.0.0 --port 8002
-    env_file: config/.env
+    env_file: config/compose.env
     ports: ["8002:8002"]
     depends_on:
       redis: {condition: service_healthy}
@@ -48,7 +48,7 @@ services:
   mcp:
     build: .
     command: uvicorn researchdesk.mcp.app:app --host 0.0.0.0 --port 8003
-    env_file: config/.env
+    env_file: config/compose.env
     ports: ["8003:8003"]
     depends_on:
       redis: {condition: service_healthy}
@@ -60,7 +60,7 @@ services:
   board:
     build: .
     command: uvicorn researchdesk.board.app:app --host 0.0.0.0 --port 8004
-    env_file: config/.env
+    env_file: config/compose.env
     ports: ["8004:8004"]
     depends_on:
       redis: {condition: service_healthy}
@@ -72,7 +72,7 @@ services:
   worker:
     build: .
     command: python -m researchdesk.workflow.worker
-    env_file: config/.env
+    env_file: config/compose.env
     depends_on:
       redis: {condition: service_healthy}
     # scale with: docker compose up --scale worker=N

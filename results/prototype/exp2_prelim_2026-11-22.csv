@@ -1,0 +1,10 @@
+scenario,reuse_mode,workers,rate_per_min,briefs_per_min_median,briefs_per_min_min,briefs_per_min_max,on_time_correct_median,upstream_calls_median,calls_per_brief_median,cache_hits_median,merged_median,p95_latency_s_median,expired_median,wrong_briefs_total,violations_total
+mostly_unique,none,4,6,1.667,1.0,1.8,50,591,11.92,0,0,118.6,106,0,0
+mostly_unique,cache,4,6,1.8,1.2,1.9,54,589,11.02,25,0,119.1,96,0,0
+mostly_unique,cache_merge,4,6,1.8,1.2,1.9,54,589,11.02,25,0,119.1,96,0,0
+highly_repeated,none,4,6,1.667,1.0,1.8,50,591,11.92,0,0,118.6,106,0,0
+highly_repeated,cache,4,6,4.367,4.2,5.233,131,82,0.63,758,0,106.3,5,0,0
+highly_repeated,cache_merge,4,6,4.433,4.2,5.233,133,81,0.61,758,1,106.3,5,0,0
+cold_burst,none,12,120,0.0,0.0,0.0,0,44,,0,0,,24,0,0
+cold_burst,cache,12,120,2.1,1.3,2.2,21,36,1.71,84,0,116.9,0,0,0
+cold_burst,cache_merge,12,120,2.4,2.4,2.4,24,25,1.04,84,11,98.0,0,0,0

@@ -1,0 +1,7 @@
+# A few seconds, not the 1 minute default, so experiments show per-run movement.
+global:
+  scrape_interval: 5s
+scrape_configs:
+  - job_name: researchdesk
+    static_configs:
+      - targets: ["api:8000", "provider:8001", "gateway:8002"]

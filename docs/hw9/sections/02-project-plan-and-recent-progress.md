@@ -9,7 +9,13 @@
 - **Repository hygiene (Muskan).** The development extra and a continuous-integration workflow are ready for review (task M1). The workflow runs the tests on every pull request.
 - **First measured results.** Experiment 1 without reuse shows a congestion collapse past the provider ceiling. A first Experiment 2 comparison shows two effects. The cache lifts the ceiling when searches repeat. Merging finishes a cold burst that the cache alone cannot (Section 6). More than 110 automated tests pass on the main branch.
 
-The work is split along three lanes. Section 10 lists them, and the handoff files in the repository give every task identifier.
+The work is split along three lanes. The task identifiers match the handoff files.
+
+| Person | Lane and tasks | Experiment led |
+|---|---|---|
+| Sruthilaya | Job model with N parallel subagents, fan-out and gather in the simulator, cache and in-flight merge (S2 to S4; the single-subagent version of S4 is done); the subagent runner and the lead in the service (S7, S8) | E2 (reuse), E3 (partial answer or late answer, simulator only) |
+| Satyaa | Provider simulator service, gateway with admission control and retry budget, task leases and crash recovery, the MCP server and the live demo (T1 to T13) | E4 (worker crash) |
+| Muskan | Job API, workers, Docker Compose and AWS scripts, replay harness, logs, metrics and dashboards, live control room (M1 to M12) | E1 (scaling ceiling and admission control) |
 
 The timeline uses targets, not gates. Only the proposal and the final deliverables have fixed due dates.
 

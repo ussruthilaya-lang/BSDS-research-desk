@@ -10,6 +10,7 @@ from collections import deque
 from dataclasses import dataclass
 
 from gateway import Gateway
+from reuse import ReuseLayer
 from sim import Backend, Paper, Sim, make_corpus, query_key, search
 from workload import Question, make_workload
 
@@ -129,20 +130,32 @@ def run_baseline(
     skew: float = 0.0,
     slots_per_worker: int = 1,
     max_queue: int = 50,
+    n_questions: int | None = None,
+    reuse_mode: str = "none",
+    ttl_s: float = 600.0,
 ) -> dict:
-    """One no-reuse run. Counts only what finishes inside [0, duration_s]."""
+    """One run (no reuse unless `reuse_mode` says so). Counts only what finishes inside [0, duration_s].
+
+    `n_questions` fixes the number of jobs (a burst); by default enough arrive to outlast the window.
+    """
     sim = Sim()
     corpus = make_corpus(200)
     backend = Backend(sim, corpus)
     gateway = Gateway(sim, backend, max_queue=max_queue)
-    system = System(sim, gateway, corpus, workers, slots_per_worker, think_time)
-    n_questions = int(rate_per_min * duration_s / 60.0 * 1.5) + 5  # enough to outlast the window
+    layer = ReuseLayer(sim, gateway, backend, mode=reuse_mode, ttl_s=ttl_s)
+    system = System(sim, layer, corpus, workers, slots_per_worker, think_time)
+    if n_questions is None:
+        n_questions = int(rate_per_min * duration_s / 60.0 * 1.5) + 5  # enough to outlast the window
     system.load(
         make_workload(n_questions, rate_per_min, k, pool_size, skew, deadline_s=deadline_s, seed=seed)
     )
     sim.run(until=duration_s)
     result = summarize(system, gateway, backend, duration_s)
     # Calls that did not end up in an on-time correct brief. Slightly overcounts at the
-    # window edge (calls for questions still running when the clock stops).
-    result["wasted_calls"] = backend.calls - k * result["on_time_correct"]
+    # window edge (calls for questions still running when the clock stops). With reuse a call can
+    # serve several searches, so calls - k * briefs no longer means anything: None until S3 joins
+    # calls to the steps that used them (contract section 12).
+    result["wasted_calls"] = backend.calls - k * result["on_time_correct"] if reuse_mode == "none" else None
+    result["cache_hits"] = layer.hits
+    result["merged"] = layer.merged
     return result

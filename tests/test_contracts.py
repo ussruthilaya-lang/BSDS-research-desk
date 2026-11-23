@@ -226,6 +226,46 @@ def test_in_process_interfaces_in_doc():
             assert re.search(rf"`{re.escape(module)}\.{name}\(settings", DOC), f"{module}.{name}"
 
 
+# ------------------------------------------ contract v1.1 (review fixes) -----
+
+def table_row(sec_title: str, first_cell: str) -> str:
+    return next(l for l in section(sec_title).splitlines() if l.startswith(f"| `{first_cell}` |"))
+
+
+def test_dispatch_result_carries_the_provider_request_id():
+    ok = c.DispatchResult("ok", "k", [1, 2], 10.0, 1000.0, corpus_version=0, request_id="req-1")
+    assert c.DispatchResult.from_json(ok.to_json()) == ok
+    dropped = c.DispatchResult("dropped", "k", [], 5.0, 0.0, reason="queue_full")
+    assert dropped.request_id is None
+
+
+def test_plan_and_synth_settings():
+    s = c.Settings()
+    assert (s.plan_ms, s.synth_ms) == (2_000, 4_000)
+    assert s.synth_ms <= s.gather_margin_ms  # the brief must fit inside the gather margin
+    s = c.Settings.from_env({"RD_PLAN_MS": "500", "RD_SYNTH_MS": "1000"})
+    assert (s.plan_ms, s.synth_ms) == (500, 1000)
+    with pytest.raises(ValueError):
+        c.Settings.from_env({"RD_SYNTH_MS": "9000"})  # longer than the default 5000 ms gather margin
+
+
+def test_complete_briefs_column_follows_briefs_per_min():
+    cols = c.HARNESS_CSV_COLUMNS
+    assert cols[cols.index("briefs_per_min") + 1] == "complete_briefs_per_min"
+
+
+def test_corpus_version_is_written_by_the_provider():
+    row = table_row("8. Redis keys", c.CORPUS_VERSION_KEY)
+    assert row.rstrip().rstrip("|").rsplit("|", 1)[1].strip() == "provider"
+
+
+def test_request_id_travels_from_provider_call_to_step_event():
+    """wasted_calls (section 12) joins provider calls to the steps that used them by request_id."""
+    assert '"request_id"' in table_row("8. Redis keys", "rd:cache:{qkey}")
+    assert '"request_id"' in table_row("8. Redis keys", "rd:ckpt:{job_id}:{subagent_id}:{step}")
+    assert "`request_id`" in table_row("10. Event names", "task.step_done")
+
+
 def test_harness_columns_in_order():
     sec = section("12. Workload file")
     para = sec[sec.index("Harness CSV columns"):]

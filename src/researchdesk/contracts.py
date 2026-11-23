@@ -193,7 +193,7 @@ TASK_GROUP = "workers"
 EVENT_STREAM = "rd:events"
 EVENT_STREAM_MAXLEN = 100_000
 EVENT_FIELD = "data"
-CORPUS_VERSION_KEY = "rd:corpus_version"  # latest version the gateway has seen from the provider
+CORPUS_VERSION_KEY = "rd:corpus_version"  # current corpus version; the provider writes it (docs section 4)
 
 
 def metrics_key(run_id: str) -> str:
@@ -253,7 +253,8 @@ METRICS = {
 }
 
 HARNESS_CSV_COLUMNS = (
-    "run_id", "setting", "seed", "briefs_per_min", "on_time_correct", "wrong_briefs", "late",
+    "run_id", "setting", "seed", "briefs_per_min", "complete_briefs_per_min", "on_time_correct",
+    "wrong_briefs", "late",
     "expired", "rejected", "failed", "upstream_calls", "calls_per_brief", "p95_latency_s",
     "completeness_mean", "cache_hits", "merged", "wasted_calls", "max_queue_depth", "violations",
 )
@@ -387,6 +388,7 @@ class DispatchResult(_Wire):
     provider_ms: float
     corpus_version: int | None = None
     reason: str | None = None
+    request_id: str | None = None  # the provider attempt that succeeded; None when dropped
 
 
 @dataclass
@@ -512,6 +514,8 @@ ENV_VARS = {
     "gather_policy": "RD_GATHER_POLICY",
     "gather_margin_ms": "RD_GATHER_MARGIN_MS",
     "think_ms": "RD_THINK_MS",
+    "plan_ms": "RD_PLAN_MS",
+    "synth_ms": "RD_SYNTH_MS",
     "seed": "RD_SEED",
     "run_id": "RD_RUN_ID",
     "redis_url": "RD_REDIS_URL",
@@ -546,6 +550,8 @@ class Settings:
     gather_policy: str = GatherPolicy.DEADLINE_PARTIAL.value
     gather_margin_ms: int = 5_000
     think_ms: int = 8_000
+    plan_ms: int = 2_000  # the lead's simulated thinking before it fans out (section 6)
+    synth_ms: int = 4_000  # the lead's simulated time to write the brief; at most gather_margin_ms
     seed: int = 0
     run_id: str = "dev"
     redis_url: str = "redis://redis:6379/0"
@@ -578,6 +584,8 @@ class Settings:
     def validate(self) -> None:
         if self.time_scale <= 0:
             raise ValueError("RD_TIME_SCALE must be positive")
+        if self.synth_ms > self.gather_margin_ms:
+            raise ValueError("RD_SYNTH_MS must not exceed RD_GATHER_MARGIN_MS (the brief has to fit in the margin)")
         for name, enum in _ENUM_SETTINGS.items():
             value = getattr(self, name)
             if value not in {e.value for e in enum}:

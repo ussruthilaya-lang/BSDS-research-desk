@@ -86,6 +86,10 @@ Rules:
   ranking is exactly the prototype's (hash of `key|paper_id`); from version 1 on, the version joins
   the hash (`key|version|paper_id`), so results change after a bump. The version increases by 1
   every `RD_CORPUS_VERSION_EVERY_MS` (0 = never).
+- **The provider owns `rd:corpus_version`** (§8). It writes the key at start-up, on every bump from a
+  timer (not only when a call arrives), and on `POST /reset`; no other service writes it. Services
+  that judge staleness read this key, so it never lags behind the provider while calls are served
+  from the cache.
 - **Latency:** `RD_PROVIDER_LATENCY_MS` × (1 + u), with u uniform in ±`RD_PROVIDER_LATENCY_JITTER`,
   drawn from a generator seeded with `RD_SEED`; then times the fault plan's `slowdown`.
 
@@ -102,7 +106,7 @@ returns `ProviderStats` for that run. `POST /reset` with `{"run_id": ...}` zeroe
 drop. Callers set their HTTP timeout above `deadline_ms` (converted to real time).
 
 - `DispatchRequest`: `key`, `deadline_ms`, `client`, `run_id`, `trace_id`, `attempt`, `job_id`, `subagent_id`, `user`
-- `DispatchResult`: `status`, `key`, `paper_ids`, `queue_wait_ms`, `provider_ms`, `corpus_version`, `reason`
+- `DispatchResult`: `status`, `key`, `paper_ids`, `queue_wait_ms`, `provider_ms`, `corpus_version`, `reason`, `request_id`
 
 Replies: 200 with `status` `ok`, or `status` `dropped` with a `reason`: 429 for `user_quota`, 503 for the rest:
 
@@ -126,7 +130,9 @@ Replies: 200 with `status` `ok`, or `status` `dropped` with a `reason`: 429 for 
   (simulated ms); `RD_PROVIDER_LATENCY_MS` until there is a first sample.
 - **Retry backoff:** wait a uniform random time between 0 and min(`RD_PACING_MS` × 2^attempt,
   4 × `RD_PACING_MS`), then queue the request again; a retry still obeys pacing.
-- After every provider result, the gateway writes its `corpus_version` to `rd:corpus_version`.
+- **Request ids:** the gateway gives every provider attempt (retries included) a fresh `request_id`
+  and returns the id of the attempt that succeeded in `DispatchResult.request_id` (`null` when
+  dropped). The runner stores it with the result, which is how §12 finds the calls that were used.
 
 `POST /admit` takes `AdmitRequest` and returns `AdmitResult` (always 200):
 
@@ -148,13 +154,17 @@ than its user's `RD_USER_CALLS_PER_MIN` allows before the deadline (reason `user
 
 Flow, in order:
 1. If `plan` is missing, call `lead.plan` (experiments always send the workload's plan; the demo
-   sends Claude's).
+   sends Claude's). Given or built, the plan costs the lead `RD_PLAN_MS` of thinking (a wait of
+   `to_real_ms(RD_PLAN_MS)`). The job's `deadline_at_ms` is set when the request arrives, so planning
+   time counts against the deadline.
 2. Unless `RD_ADMISSION=off`, call `POST /admit` with `n_subagents` = plan length, `k` = the longest
-   query list, `expected_hit_rate` = 0 (conservative).
+   query list, `expected_hit_rate` = 0 (conservative), and `deadline_ms` = what is left after step 1.
 3. Write the job hash, then one task per `SubagentPlan` on `rd:tasks`.
 4. Start `lead.gather` for the job in a background thread. It follows `gather` (default
    `RD_GATHER_POLICY`): `wait_all` waits for every subagent; `deadline_partial` stops at the deadline
-   minus `RD_GATHER_MARGIN_MS` and keeps what has finished.
+   minus `RD_GATHER_MARGIN_MS` and keeps what has finished. When it stops, it spends `RD_SYNTH_MS`
+   writing the brief (a wait of `to_real_ms(RD_SYNTH_MS)`) and then sets the final status.
+   `RD_SYNTH_MS` never exceeds `RD_GATHER_MARGIN_MS`, so `deadline_partial` is never late.
 
 `GET /jobs/{job_id}` returns `JobView`; unknown id → 404.
 
@@ -228,14 +238,14 @@ final. Hosts without MCP Apps get the same data as text, so the tools never depe
 
 | Key | Type | Holds | Written by |
 |---|---|---|---|
-| `rd:cache:{qkey}` | string, TTL `RD_CACHE_TTL_MS` | JSON `{"paper_ids": [...], "corpus_version": n}` | runner, after a provider result |
+| `rd:cache:{qkey}` | string, TTL `RD_CACHE_TTL_MS` | JSON `{"paper_ids": [...], "corpus_version": n, "request_id": "..."}` (`request_id` from `DispatchResult`) | runner, after a provider result |
 | `rd:inflight:{qkey}` | string, `SET NX PX` `RD_INFLIGHT_LEASE_MS` | owner token `worker_id:uuid` | the claimant of a search |
 | `rd:waiters:{qkey}` | sorted set | member = waiter id (`{worker_id}:{job_id}:{subagent_id}:{step}`, or `api:{trace_id}` for `POST /search`), score = waiter's `deadline_at_ms` | each merged waiter |
 | `rd:done:{qkey}` | pub/sub channel | JSON `{"status": "ok"}` once the result is in the cache, or `{"status": "dropped", "reason": ...}` | the claimant |
-| `rd:corpus_version` | string | latest corpus version seen from the provider | gateway |
+| `rd:corpus_version` | string | current corpus version (§4) | provider |
 | `rd:job:{job_id}` | hash | `status`, `n_subagents`, `done`, `failed`, `completeness`, `created_at_ms`, `finished_at_ms`, `deadline_at_ms`, `gather`, `client`, `user`, `run_id` | API, lead |
 | `rd:job:{job_id}:sub:{subagent_id}` | hash | `status`, `steps_done`, `k`, `stale_steps`, `worker_id` | runner |
-| `rd:ckpt:{job_id}:{subagent_id}:{step}` | string, `SET NX` | JSON `{"paper_ids": [...], "corpus_version": n, "source": "cache", "stale": false}` (`source` as in §6); first write wins, so writes are idempotent. `JobView.paper_ids` is built from these in step order | runner |
+| `rd:ckpt:{job_id}:{subagent_id}:{step}` | string, `SET NX` | JSON `{"paper_ids": [...], "corpus_version": n, "source": "cache", "stale": false, "request_id": "..."}` (`source` as in §6; `request_id` is the provider call that produced the result, also for cache hits and merged waiters); first write wins, so writes are idempotent. `JobView.paper_ids` is built from these in step order | runner |
 | `rd:hb:{worker_id}` | string, `PX` `RD_LEASE_MS` | last heartbeat | `lease.heartbeat` |
 | `rd:metrics:{run_id}` | hash | worker-side counters (§11) | `events.count` |
 | `rd:tasks` | stream, consumer group `workers` | one entry per subagent task | API |
@@ -245,15 +255,20 @@ final. Hosts without MCP Apps get the same data as text, so the tools never depe
 `trace_id`, `client`, `user`, `run_id`, `attempt`.
 
 **Merge protocol.** A runner with a cache miss tries `SET rd:inflight:{qkey} NX PX`. If it wins, it
-dispatches with `deadline_ms` = the latest deadline in `rd:waiters:{qkey}` (its own included).
-**While the dispatch is open it renews the claim** every `RD_INFLIGHT_LEASE_MS` ÷ 3, but only while
+dispatches with `deadline_ms` = the latest deadline in `rd:waiters:{qkey}` (its own included),
+converted with `to_sim_ms(latest deadline_at_ms - Redis now, RD_TIME_SCALE)`. That deadline is fixed
+when the dispatch starts: a waiter that arrives later with a later deadline cannot extend it, and if
+the dispatch is dropped that waiter claims again, which costs one more provider call (visible as an
+extra `search.claimed` event). **While the dispatch is open it renews the claim** every `RD_INFLIGHT_LEASE_MS` ÷ 3, but only while
 the key still holds its own token, so a long gateway queue never lets the claim lapse. On a result it
 writes the cache, publishes `{"status": "ok"}` on `rd:done:{qkey}` and deletes the claim; on a drop it
 publishes `{"status": "dropped", ...}` and deletes the claim. A runner that loses the claim adds
 itself to `rd:waiters:{qkey}` and waits for the message, also polling the cache and the claim key
 (pub/sub can lose messages). On `dropped`, or when the claim key is gone with no cache entry, a waiter
 whose deadline is still ahead claims the key again; one whose deadline has passed ends its subagent
-`failed`. With `RD_REUSE_MODE` `none` nothing is cached; with `cache`, no merging.
+`failed`. A waiter removes its own member from `rd:waiters:{qkey}` when it stops waiting (result,
+expiry or claiming again), and the claimant deletes the set when it releases the claim, so a stale
+waiter never raises the dispatch deadline. With `RD_REUSE_MODE` `none` nothing is cached; with `cache`, no merging.
 **Stale:** a cache hit whose `corpus_version` is below `rd:corpus_version` is served but counted in
 `stale_steps`.
 
@@ -306,7 +321,7 @@ JSON line only. The live control room, `GET /jobs/{job_id}/trace` and the harnes
 | `job.finished` | lead | `status`, `completeness`, `latency_ms` |
 | `task.enqueued` | api | `queries` |
 | `task.claimed` | worker | `attempt` |
-| `task.step_done` | runner | `source` |
+| `task.step_done` | runner | `source`, `request_id` |
 | `task.lease_expired` | lease code | `idle_ms` |
 | `task.reclaimed` | lease code | `from_worker`, `resume_step` |
 | `task.done` | runner | `steps` |
@@ -368,15 +383,23 @@ stores an absolute deadline: convert with `deadline - arrival`). The harness pos
 `arrival_s` × 1000 × `RD_TIME_SCALE` real ms after the run starts, with `deadline_ms` =
 `deadline_s` × 1000.
 
-Harness CSV columns, in order: `run_id`, `setting`, `seed`, `briefs_per_min`, `on_time_correct`,
-`wrong_briefs`, `late`, `expired`, `rejected`, `failed`, `upstream_calls`, `calls_per_brief`,
-`p95_latency_s`, `completeness_mean`, `cache_hits`, `merged`, `wasted_calls`, `max_queue_depth`,
-`violations`. Times in the CSV are simulated.
+Harness CSV columns, in order: `run_id`, `setting`, `seed`, `briefs_per_min`,
+`complete_briefs_per_min`, `on_time_correct`, `wrong_briefs`, `late`, `expired`, `rejected`,
+`failed`, `upstream_calls`, `calls_per_brief`, `p95_latency_s`, `completeness_mean`, `cache_hits`,
+`merged`, `wasted_calls`, `max_queue_depth`, `violations`. Times in the CSV are simulated.
 
-- Columns the prototype's `summarize` already has keep its definitions, except `wasted_calls`:
-  provider calls minus the calls whose step result was used in an on-time correct brief. (With one
-  subagent and no reuse this equals the prototype's calls − k × on-time correct briefs.) The simulator
-  (S3) and the harness (M6) both produce **all** of these columns, so their CSVs compare row for row.
+- Columns the prototype's `summarize` already has keep its definitions, except `wasted_calls`
+  (next bullet). The simulator (S3) and the harness (M6) both produce **all** of these columns, so
+  their CSVs compare row for row.
+- **`wasted_calls`** = `upstream_calls` minus the number of distinct provider calls that were used. A
+  call is used when its `request_id` appears in a `task.step_done` event of a step that belongs to
+  an on-time correct brief. A call whose result served several steps (cache hits, merged waiters)
+  counts once; a failed or retried attempt is never used. The harness computes it from `rd:events`.
+  (With one subagent and no reuse this equals the prototype's calls − k × on-time correct briefs.)
+- `briefs_per_min` counts correct briefs (§6), partial ones included (completeness above 0);
+  `complete_briefs_per_min` counts only correct briefs with completeness 1. Both are always written,
+  and E3 reports both: a gather policy that returns partial briefs would otherwise win on the first
+  column alone. With one subagent per job the two are equal.
 - `setting` is a free-text label from the experiment runner, such as `workers=4,rate=12,admission=on`.
 - `rejected` counts jobs refused at admission; `failed` and `expired` follow the §6 final-status
   rules. In the prototype's one-subagent baseline, a question whose search was dropped for a full
@@ -414,6 +437,8 @@ One `config/.env` file for Compose; `Settings.from_env(os.environ)` reads them.
 | `RD_GATHER_POLICY` | deadline_partial | `wait_all` or `deadline_partial` |
 | `RD_GATHER_MARGIN_MS` | 5000 | time kept for writing the brief |
 | `RD_THINK_MS` | 8000 | simulated agent thinking after each result |
+| `RD_PLAN_MS` | 2000 | simulated time the lead spends planning before it fans out (§6) |
+| `RD_SYNTH_MS` | 4000 | simulated time the lead spends writing the brief; at most `RD_GATHER_MARGIN_MS` (§6) |
 | `RD_SEED` | 0 | seed for latency jitter and faults |
 | `RD_RUN_ID` | dev | run id |
 | `RD_REDIS_URL` | redis://redis:6379/0 | Redis |

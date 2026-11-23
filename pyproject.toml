@@ -3,12 +3,13 @@ name = "researchdesk"
 version = "0.1.0"
 description = "Backend for an AI research assistant: shared caching and in-flight merging under a fixed paper-search API budget."
 requires-python = ">=3.11"
+# fastapi + uvicorn: the Job API and the board (contract section 1)
 # redis: the shared state, task stream and event stream (contract section 8)
-dependencies = ["redis"]
+dependencies = ["redis", "fastapi", "uvicorn"]
 
 [project.optional-dependencies]
-# pytest runs the suite; fakeredis lets Redis-backed code be tested without a server
-dev = ["pytest", "fakeredis"]
+# pytest runs the suite; fakeredis tests Redis code without a server; httpx is needed by FastAPI TestClient
+dev = ["pytest", "fakeredis", "httpx"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

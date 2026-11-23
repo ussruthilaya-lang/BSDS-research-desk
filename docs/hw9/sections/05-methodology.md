@@ -1,10 +1,10 @@
 # 5. Methodology
 
-**5a. Methods and approach.** Research Desk is built as six small services (job API, workers, gateway, provider simulator, MCP server and live control room) around one shared Redis store, and the same code runs on a laptop with Docker Compose and on a few AWS EC2 machines. Figure 1 shows the parts.
+**5a. Methods and approach.** Research Desk is built as six small services (job API, workers, gateway, provider simulator, MCP server and live control room) around one shared Redis store, and the same code runs on a laptop with Docker Compose and on a few AWS EC2 machines. The architecture diagram below shows the parts.
 
-![Figure 1. Research Desk architecture. The replay harness (green) produces every measured result. The demo path (orange) goes through the MCP server. Every service reports to one event and metric pipeline.](figures/architecture.svg)
+![Architecture diagram of Research Desk. The replay harness (green) produces every measured result. The demo path (orange) goes through the MCP server. Every service reports to one event and metric pipeline.](figures/architecture.svg)
 
-*Figure 1. Research Desk architecture. The replay harness (green) produces every measured result. The demo path (orange) goes through a thin MCP server. Every service reports to one event and metric pipeline.*
+*Architecture diagram. The replay harness (green) produces every measured result. The demo path (orange) goes through a thin MCP server. Every service reports to one event and metric pipeline.*
 
 *One job, step by step.*
 

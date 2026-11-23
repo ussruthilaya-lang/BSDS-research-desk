@@ -110,6 +110,16 @@ def test_section_images_exist_and_have_alt_text(number):
         assert (DOCS / target).is_file(), f"image {target} not found under docs/hw9/"
 
 
+def test_figure_numbers_are_unique_across_sections():
+    # Each section is written by a different person, so two can both call their chart "Figure 1".
+    owners: dict[str, list[str]] = {}
+    for number, path in FILES.items():
+        for fig in set(re.findall(r"Figure (\d+)\.", path.read_text())):  # "Figure 1." marks a caption, not a mention
+            owners.setdefault(fig, []).append(path.name)
+    clashes = {f"Figure {fig}": names for fig, names in owners.items() if len(names) > 1}
+    assert not clashes, f"the same figure number is used in more than one section: {clashes}"
+
+
 def urls(text: str) -> set[str]:
     return {u.rstrip(".,;)") for u in re.findall(r"https?://[^\s)>\]]+", text)}
 

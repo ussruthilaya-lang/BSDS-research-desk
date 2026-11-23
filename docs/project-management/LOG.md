@@ -14,5 +14,6 @@ Kept in-repo so the project-management writeup (due 12/14) can be assembled from
 | 2026-11-22 | Frozen Experiment 1 baseline `results/prototype/exp1_baseline_2026-11-22.csv` (matches the 2026-11-21 run: 4 workers at 12 arrivals a minute gives 0.27 briefs a minute), guarded by `tests/test_prototype_baseline.py` | Satyaa |
 | 2026-11-22 | Handoff tested by three dry-run Claude sessions, one per person; their findings were fixed before review | Satyaa |
 | 2026-11-22 | Proposed: the MCP server is a live public service. A Cloudflare quick tunnel on the AWS stack gives an `https://` address any Claude Desktop or Claude Code can add (`/mcp/u/HANDLE`); per-user quotas, no login (OAuth is future work); live on demand while a lab session runs | Satyaa |
+| 2026-11-22 | HW9 sections 1, 4 and 5 are drafted in separate pull requests (`docs/hw9/sections/`, build tool `python docs/hw9/build.py`, sources log). Section 1 still needs the other two members' background lines, and sections 2, 3, 6 to 10 are theirs before `--final` passes | Satyaa |
 
 Use GitHub Issues + a Project board for tasks; record design pivots and problems here.

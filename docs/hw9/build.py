@@ -26,6 +26,7 @@ DEFAULT_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 TITLE = "Homework 9: Project liftoff. Research Desk"
 TEAM = "Sruthilaya Umasankari Soma Shanmuga Sundaram, Satyaa Sudarshan Guruswamy Sethuraman, Muskan Jain"
 COURSE = "CS6650 Building Scalable Distributed Systems, Northeastern University, Fall 2026"
+REPO = "https://github.com/ussruthilaya-lang/BSDS-research-desk"
 
 # Section number -> (title, owner, rubric labels). Labels come from the HW9 rubric (15 items, one
 # point each); every item needs its own clearly labelled paragraph.
@@ -113,6 +114,7 @@ def render_html(files: dict[int, Path] | None = None) -> str:
         f'<p class="title">{html.escape(TITLE)}</p>',
         f'<p class="meta">{html.escape(TEAM)}</p>',
         f'<p class="meta">{html.escape(COURSE)}</p>',
+        f'<p class="meta">Code repository: <a href="{REPO}">{REPO}</a></p>',
     ]
     for number, (title, owner, _labels) in SECTIONS.items():
         path = files.get(number)

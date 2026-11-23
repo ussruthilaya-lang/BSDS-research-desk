@@ -2,16 +2,16 @@
 
 **2a. Recent progress and timeline.** Since the first repository commit on 11/19 we have built the base that every experiment will run on, and we have agreed the shared interfaces between the three lanes, so the services can now be built in parallel.
 
-- **Toy simulation (Sruthilaya, two merged pull requests).** A simulated clock, so a minute of traffic runs in milliseconds; a deterministic 200-paper corpus; a provider simulator that allows one call at a time with call starts at least 3 s apart and counts every violation of either rule; a seeded workload generator (Poisson arrivals, Zipf-skewed query popularity, k searches per job, a deadline per job); a FIFO gateway with a bounded queue, a pacer and a deadline check before every dispatch; worker slots; a metrics summary; and the Experiment 1 runner.
+- **Toy simulation (Sruthilaya, two merged pull requests).** A simulated clock, so a minute of traffic runs in milliseconds; a deterministic 200-paper corpus; a provider simulator that allows one call at a time with call starts at least 3 s apart and counts every violation of either rule; a seeded workload generator (Poisson arrivals, Zipf-skewed query popularity, k searches per job, a deadline per job); a FIFO gateway with a bounded queue, a pacer and a deadline check before every dispatch; worker slots; a metrics summary; the Experiment 1 runner; and a cache and in-flight merge layer in front of the gateway with a first Experiment 2 runner.
 - **Shared contract (Satyaa).** Every endpoint, Redis key, event, metric and setting is named once, in `docs/contracts.md` and `src/researchdesk/contracts.py`, with tests that fail if the document and the code drift apart. Satyaa also froze the first Experiment 1 results as a baseline guarded by a test, and wrote one handoff file per person that lists tasks, dependencies and a checkable "done when" line.
 - **Repository hygiene (Muskan).** The development extra and a continuous-integration workflow that runs the tests on every pull request (task M1) are ready for review.
-- **First measured result.** Experiment 1 without reuse already shows a congestion collapse past the provider ceiling (Section 6). More than 110 automated tests pass on the main branch.
+- **First measured results.** Experiment 1 without reuse shows a congestion collapse past the provider ceiling. A first Experiment 2 comparison shows the cache lifting the ceiling when searches repeat, and merging finishing a cold burst that the cache alone cannot (Section 6). More than 110 automated tests pass on the main branch.
 
 The work is split along three lanes, with task identifiers that match the handoff files:
 
 | Person | Lane and tasks | Experiment led |
 |---|---|---|
-| Sruthilaya | Job model with N parallel subagents, fan-out and gather in the simulator, cache and in-flight merge (S2 to S4); the subagent runner and the lead in the service (S7, S8) | E2 (reuse), E3 (partial answer or late answer, simulator only) |
+| Sruthilaya | Job model with N parallel subagents, fan-out and gather in the simulator, cache and in-flight merge (S2 to S4; the single-subagent version of S4 is done); the subagent runner and the lead in the service (S7, S8) | E2 (reuse), E3 (partial answer or late answer, simulator only) |
 | Satyaa | Provider simulator service, gateway with admission control and retry budget, task leases and crash recovery, the MCP server and the live demo (T1 to T13) | E4 (worker crash) |
 | Muskan | Job API, workers, Docker Compose and AWS scripts, replay harness, logs, metrics and dashboards, live control room (M1 to M12) | E1 (scaling ceiling and admission control) |
 

@@ -288,7 +288,7 @@ it is given. An async caller (the Job API) runs them in a worker thread.
 
 | Function | Owner | Called by | Does |
 |---|---|---|---|
-| `researchdesk.workflow.runner.search_once(settings, query, deadline_ms, client, run_id, trace_id, job_id=None, subagent_id=None) -> SearchResult` | Sruthilaya | runner, Job API `POST /search` | One search: cache → merge → `POST /dispatch`; the only emitter of `search.*` events |
+| `researchdesk.workflow.runner.search_once(settings, query, deadline_ms, client, run_id, trace_id, job_id=None, subagent_id=None, user="anon") -> SearchResult` | Sruthilaya | runner, Job API `POST /search` | One search: cache → merge → `POST /dispatch` (with `user`, so the gateway's per-user quotas apply); the only emitter of `search.*` events |
 | `researchdesk.workflow.runner.run_subagent(settings, task, worker_id) -> str` | Sruthilaya | worker | Runs one `rd:tasks` entry (`task` = its fields) from `resume_step` to the end; returns a task status value |
 | `researchdesk.workflow.runner.resume_step(settings, job_id, subagent_id) -> int` | Sruthilaya | runner, lease code | First step with no checkpoint |
 | `researchdesk.workflow.lead.plan(settings, question) -> list[SubagentPlan]` | Sruthilaya | Job API | Fallback plan when `JobRequest.plan` is missing |

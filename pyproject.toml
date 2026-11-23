@@ -5,6 +5,10 @@ description = "Backend for an AI research assistant: shared caching and in-fligh
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+# pytest runs the suite; fakeredis lets Redis-backed code be tested without a server
+dev = ["pytest", "fakeredis"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

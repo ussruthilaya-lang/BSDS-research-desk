@@ -23,6 +23,11 @@ def client(settings: c.Settings) -> redis.Redis:
     return _redis(settings)
 
 
+def now_ms(settings: c.Settings) -> int:
+    """The shared clock: Redis TIME in real ms (contract section 2)."""
+    return c.redis_time_to_ms(_redis(settings).time())
+
+
 def emit(settings: c.Settings, record: c.EventRecord) -> None:
     """Write one EventRecord as a JSON log line and as an entry in rd:events."""
     line = record.to_json()

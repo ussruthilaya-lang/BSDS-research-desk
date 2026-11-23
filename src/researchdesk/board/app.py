@@ -50,7 +50,9 @@ def create_app(settings: c.Settings) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     def page():
-        return PAGE.read_text()
+        # The page needs RD_TIME_SCALE: event times are real milliseconds, while deadlines and the
+        # 20-calls-a-minute limit are in simulated time. Unreplaced, the page falls back to 1.
+        return PAGE.read_text().replace("__TIME_SCALE__", str(settings.time_scale))
 
     @app.get("/events/stream")
     def events_stream(since: str = "", tail: int = 500, max: int | None = None):

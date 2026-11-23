@@ -3,7 +3,8 @@ name = "researchdesk"
 version = "0.1.0"
 description = "Backend for an AI research assistant: shared caching and in-flight merging under a fixed paper-search API budget."
 requires-python = ">=3.11"
-dependencies = []
+# redis: the shared state, task stream and event stream (contract section 8)
+dependencies = ["redis"]
 
 [project.optional-dependencies]
 # pytest runs the suite; fakeredis lets Redis-backed code be tested without a server

@@ -1,0 +1,3 @@
+# 9. Team Communication
+
+**9. Team communication.** The team communicates in a private WhatsApp group chat. Only the three team members are in it, so the instructors have no access to it. Teammates reply quickly, and the expected response time is within 30 minutes, which is how the team already works in practice. To synchronise, the team meets in person or on a video call. Short questions and status updates go in the chat. Decisions that need discussion, such as changing the design or the split of tasks, are made in a meeting, and the outcome is written to the project-management log in the repository so that it is recorded.

@@ -1,5 +1,9 @@
 # Research Desk: Project Plan
 
+> **Superseded (2026-11-22).** This is the v1 draft. The current design, experiment numbering
+> (E1 to E4) and task split are in `docs/handoff/README.md` and `docs/contracts.md`. Task T10
+> rewrites this file once the team approves v2.
+
 Status: draft v1 (2026-11-20). Open decisions are listed at the end.
 
 ## 1. Summary

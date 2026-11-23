@@ -4,6 +4,9 @@ Backend for an AI research assistant. It answers more student questions on time 
 
 > Northeastern BSDS final project. Team: Sruthilaya Umasankari Soma Shanmuga Sundaram, Satyaa Sudarshan Guruswamy Sethuraman, Muskan Jain.
 
+> **Current design (v2, 2026-11-22, pending team approval):** start at `docs/handoff/README.md`
+> and `docs/contracts.md`. The experiment list and ownership table below are the v1 draft.
+
 ## Why
 One research question triggers several searches. Many concurrent users means many agents competing for the same paper-search budget (modeled on arXiv: 1 in-flight call, 3 s pacing, at most 20 calls/min). Duplicate searches waste that budget.
 

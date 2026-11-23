@@ -18,6 +18,11 @@ def _redis(settings: c.Settings) -> redis.Redis:
     return _client(settings.redis_url)
 
 
+def client(settings: c.Settings) -> redis.Redis:
+    """The shared Redis client for these settings (one per URL)."""
+    return _redis(settings)
+
+
 def emit(settings: c.Settings, record: c.EventRecord) -> None:
     """Write one EventRecord as a JSON log line and as an entry in rd:events."""
     line = record.to_json()

@@ -1,0 +1,104 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Research Desk: live control room</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 16px; background: #fafafa; color: #222 }
+  h2 { font-size: 15px; margin: 18px 0 6px }
+  #strip { display: flex; gap: 12px; flex-wrap: wrap }
+  .tile { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 8px 14px; min-width: 120px }
+  .tile b { display: block; font-size: 22px }
+  .bad { background: #fde8e8; border-color: #d33 }
+  table { border-collapse: collapse; background: #fff; width: 100% }
+  td, th { border: 1px solid #e3e3e3; padding: 3px 8px; text-align: left; vertical-align: top }
+  .bar { display: inline-block; width: 70px; height: 10px; background: #e5e5e5; margin-right: 4px }
+  .bar i { display: block; height: 100%; background: #3a7 }
+  .bar.failed i { background: #d33 }
+  #feed { height: 220px; overflow: auto; background: #fff; border: 1px solid #ddd; font: 12px ui-monospace, monospace }
+  canvas { background: #fff; border: 1px solid #ddd }
+  input { margin-right: 8px }
+</style>
+<h1 style="font-size:18px">Research Desk: live control room</h1>
+<div id="strip"></div>
+<h2>Run</h2><div id="run">no run yet</div>
+<h2>Jobs</h2><table id="jobs"></table>
+<h2>Gateway timeline (last 60 s of provider call starts)</h2><canvas id="tl" width="900" height="40"></canvas>
+<h2>Workers and leases</h2><table id="workers"></table>
+<h2>Users</h2><table id="users"></table>
+<h2>Event feed</h2>
+<div>client <input id="fc" size="8"> user <input id="fu" size="8"> run_id <input id="fr" size="10"></div>
+<div id="feed"></div>
+<script>
+const S = { jobs: {}, workers: {}, users: {}, violations: 0, depth: 0, sent: [], served: [], hits: 0, searches: 0,
+            running: 0, finished: 0, expiries: [], run: null, feed: [] };
+const user = (u) => (S.users[u || "anon"] ||= { calls: [], drops: 0, running: new Set() });
+const job = (e) => (S.jobs[e.job_id] ||= { subs: {}, status: "submitted", user: e.user, deadline: null });
+const sub = (j, e) => (j.subs[e.subagent_id] ||= { k: 0, done: 0, status: "queued", steps: [] });
+
+function apply(e) {
+  const f = e.fields || {}, now = e.ts_ms;
+  S.feed.push(e); if (S.feed.length > 300) S.feed.shift();
+  switch (e.event) {
+    case "run.started": S.run = { ...f, run_id: e.run_id, state: "running" }; break;
+    case "run.finished": if (S.run) S.run.state = "finished"; break;
+    case "job.submitted": { const j = job(e); j.deadline = now + f.deadline_ms; user(e.user).running.add(e.job_id); break; }
+    case "job.admitted": job(e).status = "admitted"; S.running++; break;
+    case "job.rejected": job(e).status = "rejected"; user(e.user).running.delete(e.job_id); break;
+    case "task.enqueued": { const s = sub(job(e), e); s.k = (f.queries || []).length; break; }
+    case "task.claimed": { const s = sub(job(e), e); s.status = "running";
+      S.workers[e.worker_id] = { ...(S.workers[e.worker_id] || {}), task: `${e.job_id}/${e.subagent_id}`, hb: now }; break; }
+    case "task.step_done": { const s = sub(job(e), e); s.done++; s.steps[e.step ?? s.done - 1] = f.source; break; }
+    case "task.done": sub(job(e), e).status = "done"; break;
+    case "task.failed": sub(job(e), e).status = "failed"; break;
+    case "job.finished": { const j = job(e); j.status = f.status; j.completeness = f.completeness;
+      S.running = Math.max(S.running - 1, 0); S.finished++; user(e.user).running.delete(e.job_id); break; }
+    case "search.cache_hit": S.hits++; S.searches++; break;
+    case "search.merged": S.hits++; S.searches++; break;
+    case "search.done": if (f.source === "provider") S.searches++; break;
+    case "gateway.queued": S.depth = f.depth; break;
+    case "gateway.sent": S.sent.push(now); user(e.user).calls.push(now); break;
+    case "gateway.dropped": if (f.reason === "user_quota") user(e.user).drops++; break;
+    case "provider.served": S.served.push(now); break;
+    case "provider.violation": S.violations++; break;
+    case "worker.started": S.workers[e.worker_id] = { task: "idle", hb: now }; break;
+    case "worker.heartbeat": (S.workers[e.worker_id] ||= {}).hb = now; break;
+    case "task.lease_expired": S.expiries.push(`${e.job_id}/${e.subagent_id} expired`); break;
+    case "task.reclaimed": S.expiries.push(`${e.job_id}/${e.subagent_id} reclaimed from ${f.from_worker}`); break;
+  }
+}
+
+const within = (a, ms, t) => a.filter((x) => x > t - ms).length;
+function bar(s) { const p = s.k ? Math.round((100 * s.done) / s.k) : 0;
+  return `<span class="bar ${s.status}"><i style="width:${p}%"></i></span>`; }
+
+function render() {
+  const t = S.feed.length ? S.feed[S.feed.length - 1].ts_ms : Date.now();
+  const rate = within(S.served.length ? S.served : S.sent, 60000, t);
+  const tiles = [["violations", S.violations, S.violations > 0], ["queue depth", S.depth],
+    ["calls / min (limit 20)", rate, rate > 20], ["cache hit rate", S.searches ? Math.round(100 * S.hits / S.searches) + "%" : "-"],
+    ["jobs running", S.running], ["jobs finished", S.finished]];
+  document.getElementById("strip").innerHTML = tiles.map(([n, v, bad]) =>
+    `<div class="tile ${bad ? "bad" : ""}">${n}<b>${v}</b></div>`).join("");
+  document.getElementById("run").textContent = S.run
+    ? `${S.run.run_id}: ${S.run.setting || ""} seed ${S.run.seed ?? "-"}, ${S.run.n_jobs ?? "?"} jobs posted, ${S.run.state}` : "no run yet";
+  document.getElementById("jobs").innerHTML = "<tr><th>job</th><th>status</th><th>subagents</th><th>left</th><th>complete</th></tr>" +
+    Object.entries(S.jobs).slice(-30).map(([id, j]) => {
+      const left = j.deadline && !["on_time", "late", "expired", "failed", "rejected"].includes(j.status)
+        ? Math.max(0, Math.round((j.deadline - t) / 1000)) + " s" : "";
+      return `<tr><td>${id}</td><td>${j.status}</td><td>${Object.values(j.subs).map((s) => bar(s) +
+        (s.steps.map((x) => (x || "?")[0]).join(""))).join("<br>")}</td><td>${left}</td><td>${j.completeness ?? ""}</td></tr>`; }).join("");
+  document.getElementById("workers").innerHTML = "<tr><th>worker</th><th>task</th><th>last heartbeat</th></tr>" +
+    Object.entries(S.workers).map(([w, x]) => `<tr><td>${w}</td><td>${x.task || ""}</td><td>${x.hb ? Math.round((t - x.hb) / 1000) + " s ago" : ""}</td></tr>`).join("") +
+    S.expiries.slice(-5).map((x) => `<tr><td colspan=3>${x}</td></tr>`).join("");
+  document.getElementById("users").innerHTML = "<tr><th>user</th><th>calls last min</th><th>quota drops</th><th>jobs running</th></tr>" +
+    Object.entries(S.users).map(([u, x]) => `<tr><td>${u}</td><td>${within(x.calls, 60000, t)}</td><td>${x.drops}</td><td>${x.running.size}</td></tr>`).join("");
+  const cv = document.getElementById("tl").getContext("2d"); cv.clearRect(0, 0, 900, 40);
+  cv.fillStyle = "#37a"; S.sent.filter((x) => x > t - 60000).forEach((x) => cv.fillRect(900 - (t - x) * 900 / 60000, 5, 2, 30));
+  const fc = fcl.value, fu = ful.value, fr = frl.value;
+  document.getElementById("feed").innerHTML = S.feed.filter((e) => (!fc || e.client === fc) && (!fu || e.user === fu) && (!fr || e.run_id === fr))
+    .slice(-80).reverse().map((e) => `${new Date(e.ts_ms).toISOString().slice(11, 23)} ${e.client}/${e.user} ${e.service} <b>${e.event}</b> ${e.job_id} ${JSON.stringify(e.fields)}`).join("<br>");
+}
+const fcl = document.getElementById("fc"), ful = document.getElementById("fu"), frl = document.getElementById("fr");
+const es = new EventSource("/events/stream?tail=500");
+es.onmessage = (m) => apply(JSON.parse(m.data));
+setInterval(render, 500);
+</script>

@@ -10,9 +10,9 @@
 
 The long-term vision goes beyond the course. Real language-model agents would replace the scripted ones, and would be measured under the same limits. Several providers, each with its own limits, would replace the single simulated one. The gateway would become highly available, with failover guarded by a fencing token and, if it must never stall, a consensus protocol such as Raft or Paxos. Fair sharing between wide and narrow jobs (experiment E5) and per-tenant budgets and billing would follow, with a real sign-in (OAuth 2.1) in place of the handle that identifies a user today. The gateway could be released as a reusable library for any rate-limited agent tool.
 
-**3b. Observability, performance, reliability and cost control.** The product serves AI agents, so the people who deploy it need to know how it performs, how it fails and what it costs. Observability is built in (Section 5): every state change is a structured event, Prometheus counters feed a Grafana dashboard, a live control room shows the events as they arrive, and the provider simulator's violation count must be zero in every run.
+**3b. Observability, performance, reliability and cost control.** The product serves AI agents, so the people who deploy it need to know how it performs, how it fails and what it costs. Observability is part of the design (Section 5): every state change will be a structured event, Prometheus counters will feed a Grafana dashboard, a live control room will show the events as they arrive, and the provider simulator's violation count must be zero in every run.
 
-Five controls protect performance, reliability and cost for a deployer:
+The design has five controls that protect performance, reliability and cost for a deployer:
 
 - **Admission control** rejects a job that cannot finish before its deadline, so it spends no calls. The preliminary runs show why: with no admission control, about nine in ten provider calls were wasted under overload (Section 6).
 - **The cache and merging of identical searches** cut provider calls. On a workload of repeated searches, calls fell from 591 to 82 in the simulator (Section 6).

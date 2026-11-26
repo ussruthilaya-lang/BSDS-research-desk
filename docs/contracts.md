@@ -118,6 +118,7 @@ Replies: 200 with `status` `ok`, or `status` `dropped` with a `reason`: 429 for 
 | `admission_rejected` | Used by the API when `POST /admit` says no |
 | `provider_error` | The provider failed and the deadline leaves no time to retry |
 | `user_quota` | The request's `user` is over `RD_USER_CALLS_PER_MIN` or `RD_USER_QUEUE_MAX` (reply 429, not 503) |
+| `client_gone` | The caller closed its connection while the request was queued (a crashed worker). **No provider call is made.** Nothing is sent, because nobody is listening; it is counted in `rd_gateway_drops_total` and logged in `gateway.dropped`. A call already in flight finishes and its result is discarded, but it still counts as an upstream call |
 
 - One call in flight at a time; call starts at least `RD_PACING_MS` apart.
 - Queue order is `RD_QUEUE_POLICY`: `fifo`, `round_robin` (one request per job in turn), or
@@ -175,9 +176,11 @@ Flow, in order:
   `rejected`, `failed`. Task status: `queued`, `running`, `done`, `failed`.
 - **The brief** is the `subagents` list of a final `JobView`. `completeness` = subagents with status
   `done` ÷ `n_subagents`. A dropped search (any reason) ends only its own subagent `failed`.
-- **Final status**, set by `lead.gather` when it stops (the API sets `rejected` at admission):
-  1. completeness 0 and every subagent `failed` → `failed`;
-  2. otherwise completeness 0 → `expired`;
+- **Final status**, set by `lead.gather` when it stops (the API sets `rejected` at admission). The
+  rule is `final_job_status` in `contracts.py`; the simulator and the real lead both use it:
+  1. completeness 0 and at least one subagent failed for a reason other than `deadline_unmeetable` → `failed`;
+  2. otherwise completeness 0 → `expired` (nothing finished in time: the subagents were still queued
+     or running when the gather stopped, or every drop was `deadline_unmeetable`);
   3. otherwise the brief was written by the deadline → `on_time`, else `late` (only `wait_all`
      can be late; `deadline_partial` stops in time).
 - **A brief is correct** when it is `on_time` (so completeness is above 0) and no included subagent
@@ -275,7 +278,10 @@ waiter never raises the dispatch deadline. With `RD_REUSE_MODE` `none` nothing i
 **Leases.** Each worker reads `rd:tasks` as consumer `worker_id` in group `workers`. A task is
 acknowledged only when it is done. **Liveness comes from the heartbeat key, not from stream idle
 time:** a long subagent (k steps of `RD_THINK_MS` plus queueing) is idle on the stream for longer
-than `RD_LEASE_MS` while it is healthy. With `RD_LEASES=on`, another worker may reclaim a pending task
+than `RD_LEASE_MS` while it is healthy. **`lease.heartbeat` runs on its own thread**, started with
+the worker and independent of the thread running `run_subagent`: a worker blocked in a long gateway
+wait must keep heartbeating, or its key expires and a healthy task is taken over (a false takeover
+and a duplicate provider call). With `RD_LEASES=on`, another worker may reclaim a pending task
 only when its owner's `rd:hb:{worker_id}` key has expired. It then resumes at `runner.resume_step`,
 and `claim` sets the returned `attempt` field to the entry's delivery count minus 1 (stream entries
 cannot be edited; check the Redis docs for the pending-entry commands). With `RD_LEASES=off`, nothing is reclaimed: a crashed worker's task stays
@@ -294,7 +300,7 @@ it is given. An async caller (the Job API) runs them in a worker thread.
 | `researchdesk.workflow.lead.plan(settings, question) -> list[SubagentPlan]` | Sruthilaya | Job API | Fallback plan when `JobRequest.plan` is missing |
 | `researchdesk.workflow.lead.gather(settings, job_id) -> JobView` | Sruthilaya | Job API, one background thread per job | Waits per the gather policy, writes the final status and completeness |
 | `researchdesk.workflow.lease.claim(settings, worker_id) -> Optional[tuple[str, dict]]` | Satyaa | worker | Next task (new, or reclaimed when `RD_LEASES=on`): stream entry id and fields |
-| `researchdesk.workflow.lease.heartbeat(settings, worker_id, entry_id) -> None` | Satyaa | worker, every `RD_HEARTBEAT_MS` | Keeps the lease; writes `rd:hb:{worker_id}` |
+| `researchdesk.workflow.lease.heartbeat(settings, worker_id, entry_id) -> None` | Satyaa | worker, from its own thread every `RD_HEARTBEAT_MS` | Keeps the lease; writes `rd:hb:{worker_id}` |
 | `researchdesk.workflow.lease.ack(settings, entry_id) -> None` | Satyaa | worker, after `run_subagent` | Marks the task done |
 | `researchdesk.metrics.events.emit(settings, record) -> None` | Muskan | every service | Writes one `EventRecord` to the log and to `rd:events` |
 | `researchdesk.metrics.events.count(settings, metric, labels, amount=1) -> None` | Muskan | worker-side code | Adds to a counter in `rd:metrics:{run_id}` |

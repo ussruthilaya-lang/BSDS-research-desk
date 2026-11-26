@@ -277,3 +277,49 @@ def test_search_once_takes_the_user():
     """POST /search carries a user; the gateway's per-user quotas need it, so search_once must accept it."""
     row = next(line for line in DOC.splitlines() if "runner.search_once(settings" in line)
     assert 'user="anon"' in row
+
+
+# ------------------------------------------------------- contract v1.2 -------
+
+def test_final_job_status_follows_section_6():
+    f = c.final_job_status
+    assert f(done=2, failure_reasons=[], on_time=True) == "on_time"
+    assert f(2, [], False) == "late"
+    assert f(1, ["queue_full"], True) == "on_time"  # a partial brief is still a brief
+    assert f(0, [], True) == "expired"
+    assert f(0, [None], True) == "expired"  # still queued or running when the gather stopped
+    assert f(0, ["deadline_unmeetable"] * 2, True) == "expired"  # every drop was the deadline: ran out of time
+    assert f(0, ["queue_full"], True) == "failed"
+    assert f(0, ["deadline_unmeetable", "provider_error"], True) == "failed"
+    assert f(0, [None, "retry_budget_exhausted"], True) == "failed"
+    assert f(0, ["user_quota"], False) == "failed"
+
+
+def test_final_job_status_rejects_an_unknown_reason():
+    with pytest.raises(ValueError):
+        c.final_job_status(0, ["bogus"], True)
+
+
+def test_final_job_status_only_returns_final_statuses_the_api_can_set():
+    assert {"on_time", "late", "expired", "failed"} <= {s.value for s in c.FINAL_JOB_STATUSES}
+    for reasons in ([], [None], ["queue_full"], ["deadline_unmeetable"]):
+        for done in (0, 1):
+            for on_time in (True, False):
+                assert c.final_job_status(done, reasons, on_time) in {s.value for s in c.FINAL_JOB_STATUSES}
+
+
+def test_doc_states_the_final_status_rule_the_function_implements():
+    assert "other than `deadline_unmeetable`" in section("6. Job API")
+    for reason in c.DEADLINE_DROP_REASONS:
+        assert f"| `{reason}` |" in section("5. Gateway")
+
+
+def test_a_client_that_disconnected_is_a_documented_drop_reason_with_no_provider_call():
+    assert c.DropReason.CLIENT_GONE.value == "client_gone"
+    assert "no provider call" in table_row("5. Gateway", "client_gone").lower()
+
+
+def test_doc_says_the_heartbeat_runs_on_its_own_thread():
+    assert "own thread" in section("8. Redis keys")
+    row = table_row("8. Redis keys", "researchdesk.workflow.lease.heartbeat(settings, worker_id, entry_id) -> None")
+    assert "own thread" in row

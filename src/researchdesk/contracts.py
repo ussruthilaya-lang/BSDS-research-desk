@@ -60,6 +60,7 @@ class DropReason(str, Enum):
     ADMISSION_REJECTED = "admission_rejected"
     PROVIDER_ERROR = "provider_error"
     USER_QUOTA = "user_quota"  # the user is over RD_USER_CALLS_PER_MIN or RD_USER_QUEUE_MAX
+    CLIENT_GONE = "client_gone"  # the caller disconnected while queued; no provider call, nothing is sent
 
 
 class JobStatus(str, Enum):
@@ -75,6 +76,29 @@ class JobStatus(str, Enum):
 FINAL_JOB_STATUSES = frozenset(
     {JobStatus.ON_TIME, JobStatus.LATE, JobStatus.EXPIRED, JobStatus.REJECTED, JobStatus.FAILED}
 )
+
+
+# Drops that mean "ran out of time". A job whose subagents all ended this way (or never finished)
+# is `expired`, not `failed`: the frozen Experiment 1 baseline counts deadline drops as expiry.
+DEADLINE_DROP_REASONS = frozenset({DropReason.DEADLINE_UNMEETABLE.value})
+
+
+def final_job_status(done: int, failure_reasons, on_time: bool) -> str:
+    """Final status of a job once its gather has stopped (docs/contracts.md section 6).
+
+    done: subagents in the brief. failure_reasons: one entry per subagent that is NOT in the brief,
+    its DropReason value if its search was dropped, or None if it was still queued or running.
+    on_time: the brief was written by the deadline. (`rejected` is set by the API at admission.)
+    """
+    known = {reason.value for reason in DropReason}
+    for reason in failure_reasons:
+        if reason is not None and reason not in known:
+            raise ValueError(f"unknown drop reason {reason!r}")
+    if done:
+        return (JobStatus.ON_TIME if on_time else JobStatus.LATE).value
+    if any(reason is not None and reason not in DEADLINE_DROP_REASONS for reason in failure_reasons):
+        return JobStatus.FAILED.value
+    return JobStatus.EXPIRED.value
 
 
 class TaskStatus(str, Enum):

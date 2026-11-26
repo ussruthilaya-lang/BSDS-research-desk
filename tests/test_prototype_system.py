@@ -50,11 +50,12 @@ def test_finishing_after_deadline_is_late_not_on_time():
     assert system.outcomes[0].status == "late"
 
 
-def test_rejected_search_aborts_question_and_frees_the_worker():
+def test_a_search_dropped_for_a_full_queue_fails_the_question_and_frees_the_worker():
     sim, backend, gateway, system = build(workers=3, think_time=1.0, max_queue=0)
     system.load([Question(i, 0.0, 100.0, ("a", "b")) for i in range(3)])
     sim.run()
-    assert sorted(o.status for o in system.outcomes) == ["rejected"] * 3
+    # contract section 12: what the first prototype called "rejected" is "failed" (rejected = refused at admission)
+    assert sorted(o.status for o in system.outcomes) == ["failed"] * 3
     assert system.free_slots == 3
 
 

@@ -63,6 +63,22 @@ def search(corpus: list[Paper], key: str, top: int = 5) -> tuple[int, ...]:
     return tuple(p.id for p in sorted(corpus, key=score)[:top])
 
 
+class Served(tuple):
+    """The paper ids a search returned, tagged with the provider call that produced them.
+
+    Equal to a plain tuple of ids, so comparisons with `search()` still work. The tag is how
+    wasted_calls (docs/contracts.md section 12) tells which calls an on-time brief actually used; it
+    survives the cache and merging because they hand on the same object.
+    """
+
+    call_id: int
+
+    def __new__(cls, ids, call_id: int):
+        obj = super().__new__(cls, ids)
+        obj.call_id = call_id
+        return obj
+
+
 class Backend:
     """arXiv-like provider.
 
@@ -90,8 +106,8 @@ class Backend:
         self.in_flight += 1
         self.last_start = self.sim.now
         self.calls += 1
-        self.sim.after(self.latency, self._finish, key, on_done)
+        self.sim.after(self.latency, self._finish, key, on_done, self.calls)
 
-    def _finish(self, key: str, on_done) -> None:
+    def _finish(self, key: str, on_done, call_id: int) -> None:
         self.in_flight -= 1
-        on_done(search(self.corpus, key))
+        on_done(Served(search(self.corpus, key), call_id))
